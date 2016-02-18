@@ -3,7 +3,7 @@
     <parent>
         <groupId>com.thinkaurelius.titan</groupId>
         <artifactId>titan</artifactId>
-        <version>1.1.0-SNAPSHOT</version>
+        <version>1.1.0-cdh5.5.1-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <artifactId>titan-cassandra</artifactId>
@@ -19,7 +19,7 @@
         <top.level.basedir>${basedir}/..</top.level.basedir>
     </properties>
     <!-- Libraries -->
-    
+
     <dependencies>
         <dependency>
             <groupId>com.thinkaurelius.titan</groupId>
@@ -57,7 +57,7 @@
              backend throughout all its tests.   I don't want to maintain a mixture
              of logback.xml and log4j.properties files scattered randomly through
              the titan-* submodules.  Maven populates the classpath elements for
-             tests in pom appearance order.  That's why these dependencies are 
+             tests in pom appearance order.  That's why these dependencies are
              explicitly declared below: to make slf4j-log4j12 preced logback-classic
              on the test classpath. -->
         <dependency>
@@ -126,7 +126,7 @@
     </dependencies>
 
     <build>
-    
+
         <resources>
             <resource>
                 <directory>${basedir}/src/main/resources</directory>
@@ -138,7 +138,7 @@
                 <directory>${basedir}/src/test/resources</directory>
             </testResource>
         </testResources>
-        
+
         <plugins>
             <plugin>
                 <artifactId>maven-resources-plugin</artifactId>
@@ -229,7 +229,7 @@
                     </execution>
                     <execution>
                         <!-- Run by "mvn org.apache.maven.plugins:maven-surefire-plugin:test"
-                
+
                             Sonar does this when running JaCoCo and
                             provides no configuration option to
                             change its behavior. Define a safe
@@ -346,8 +346,8 @@
             <plugin>
                 <artifactId>maven-dependency-plugin</artifactId>
                 <executions>
-                    <!-- Provide Java Memory Meter for Cassandra. Cassandra logs warnings if JAMM 
-                      is not available. Also, production Cassandra deployments will probably use JAMM, 
+                    <!-- Provide Java Memory Meter for Cassandra. Cassandra logs warnings if JAMM
+                      is not available. Also, production Cassandra deployments will probably use JAMM,
                       so we might as well include it in our test configuration. -->
                     <execution>
                         <id>copy</id>
@@ -386,15 +386,14 @@
 
     <profiles>
       <profile>
-	<id>coverage</id>
-	<activation>
-	  <activeByDefault>false</activeByDefault>
-	</activation>
+  <id>coverage</id>
+  <activation>
+    <activeByDefault>false</activeByDefault>
+  </activation>
 
-	<properties>
-	  <test.extra.jvm.opts>${jacoco.opts} -javaagent:${basedir}/target/jamm-${jamm.version}.jar</test.extra.jvm.opts>
-	</properties>
+  <properties>
+    <test.extra.jvm.opts>${jacoco.opts} -javaagent:${basedir}/target/jamm-${jamm.version}.jar</test.extra.jvm.opts>
+  </properties>
       </profile>
     </profiles>
 </project>
-

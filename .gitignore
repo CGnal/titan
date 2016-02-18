@@ -50,3 +50,5 @@ titan-*/pom.xml.versionsBackup
 *~
 # Nano file backups
 *.save
+/oldLib/
+/oldlib01/

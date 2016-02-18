@@ -3,23 +3,23 @@
     <parent>
         <groupId>com.thinkaurelius.titan</groupId>
         <artifactId>titan-hbase-parent</artifactId>
-        <version>1.1.0-SNAPSHOT</version>
+        <version>1.1.0-cdh5.5.1-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <artifactId>titan-hbase-096</artifactId>
     <name>Titan-HBase: 0.96 Compatibility Shim</name>
     <url>http://thinkaurelius.github.com/titan/</url>
-    
+
     <properties>
         <jruby.version>1.6.8</jruby.version>
         <top.level.basedir>${project.parent.parent.basedir}</top.level.basedir>
     </properties>
-    
+
     <dependencies>
         <dependency>
-	    <groupId>${project.groupId}</groupId>
-	    <artifactId>titan-hbase-core</artifactId>
-	    <version>${project.version}</version>
+      <groupId>${project.groupId}</groupId>
+      <artifactId>titan-hbase-core</artifactId>
+      <version>${project.version}</version>
             <exclusions>
                 <exclusion>
                     <artifactId>commons-net</artifactId>
@@ -74,7 +74,7 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
-    
+
     <build>
         <sourceDirectory>src/main/java</sourceDirectory>
         <testSourceDirectory>../common/test/java</testSourceDirectory>
@@ -131,18 +131,18 @@
             </plugin>
         </plugins>
     </build>
-    
+
     <profiles>
         <profile>
             <id>hadoop1</id>
-            
+
             <activation>
                 <property>
                     <name>hadoop.profile</name>
                     <value>1.0</value>
                 </property>
             </activation>
-            
+
             <properties>
                 <hbase.version>${hbase096.core.version}-hadoop1</hbase.version>
             </properties>
