@@ -49,7 +49,7 @@ public abstract class TitanGraphIterativeBenchmark extends TitanGraphBaseTest {
         KeyColumnValueStore store = manager.openDatabase(Backend.EDGESTORE_NAME);
         SliceQuery query = new SliceQuery(BufferUtil.zeroBuffer(8),BufferUtil.oneBuffer(8));
         query.setLimit(2);
-        Stopwatch watch = Stopwatch.createStarted();
+        Stopwatch watch = new Stopwatch(); watch.start();
         StoreTransaction txh = manager.beginTransaction(StandardBaseTransactionConfig.of(TimestampProviders.MILLI));
         KeyIterator iter = store.getKeys(query,txh);
         int numV = 0;

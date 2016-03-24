@@ -1,32 +1,19 @@
 package com.thinkaurelius.titan.graphdb.database.idassigner;
 
-import java.time.Duration;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Queue;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-
 import com.google.common.base.Preconditions;
 import com.google.common.base.Stopwatch;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.thinkaurelius.titan.core.TitanException;
 import com.thinkaurelius.titan.diskstorage.BackendException;
-import com.thinkaurelius.titan.diskstorage.IDBlock;
-
 import com.thinkaurelius.titan.diskstorage.IDAuthority;
-
-import com.thinkaurelius.titan.diskstorage.util.time.Temporals;
+import com.thinkaurelius.titan.diskstorage.IDBlock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.time.Duration;
+import java.util.ArrayDeque;
+import java.util.Queue;
+import java.util.concurrent.*;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
@@ -123,7 +110,8 @@ public class StandardIDPool implements IDPool {
     }
 
     private synchronized void waitForIDBlockGetter() throws InterruptedException {
-        Stopwatch sw = Stopwatch.createStarted();
+        Stopwatch sw = new Stopwatch();
+        sw.start();
         if (null != idBlockFuture) {
             try {
                 nextBlock = idBlockFuture.get(renewTimeout.toMillis(), TimeUnit.MILLISECONDS);
@@ -256,7 +244,7 @@ public class StandardIDPool implements IDPool {
             this.partition = partition;
             this.idNamespace = idNamespace;
             this.renewTimeout = renewTimeout;
-            this.alive = Stopwatch.createStarted();
+            this.alive = new Stopwatch(); this.alive.start();
         }
 
         private void stopRequested()
@@ -266,7 +254,7 @@ public class StandardIDPool implements IDPool {
 
         @Override
         public IDBlock call() {
-            Stopwatch running = Stopwatch.createStarted();
+            Stopwatch running = new Stopwatch(); running.start();
 
             try {
                 if (stopRequested) {
