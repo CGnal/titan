@@ -1,10 +1,10 @@
 package com.thinkaurelius.titan.diskstorage.hbase;
 
-import java.util.Arrays;
-
 import org.apache.hadoop.hbase.util.VersionInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Arrays;
 
 public class HBaseCompatLoader {
 
@@ -32,7 +32,7 @@ public class HBaseCompatLoader {
             classNameSource = "from explicit configuration";
         } else {
             String hbaseVersion = VersionInfo.getVersion();
-            for (String supportedVersion : Arrays.asList("0.94", "0.96", "0.98", "1.0")) {
+            for (String supportedVersion : Arrays.asList("0.94", "0.96", "0.98", "1.0", "1.2")) {
                 if (hbaseVersion.startsWith(supportedVersion + ".")) {
                     className = "com.thinkaurelius.titan.diskstorage.hbase.HBaseCompat" + supportedVersion.replaceAll("\\.", "_");
                     classNameSource = "supporting runtime HBase version " + hbaseVersion;
