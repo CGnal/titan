@@ -32,7 +32,7 @@ public class HBaseBinaryInputFormat extends AbstractBinaryInputFormat {
     private static final Logger log = LoggerFactory.getLogger(HBaseBinaryInputFormat.class);
 
     private final TableInputFormat tableInputFormat = new TableInputFormat();
-    private TableRecordReader tableReader;
+    private RecordReader tableReader;
     private byte[] inputCFBytes;
     private RecordReader<StaticBuffer, Iterable<Entry>> titanRecordReader;
 
@@ -44,7 +44,7 @@ public class HBaseBinaryInputFormat extends AbstractBinaryInputFormat {
     @Override
     public RecordReader<StaticBuffer, Iterable<Entry>> createRecordReader(final InputSplit inputSplit, final TaskAttemptContext taskAttemptContext) throws IOException, InterruptedException {
         tableReader =
-                (TableRecordReader) tableInputFormat.createRecordReader(inputSplit, taskAttemptContext);
+                (RecordReader) tableInputFormat.createRecordReader(inputSplit, taskAttemptContext);
         titanRecordReader =
                 new HBaseBinaryRecordReader(tableReader, inputCFBytes);
         return titanRecordReader;
@@ -90,7 +90,7 @@ public class HBaseBinaryInputFormat extends AbstractBinaryInputFormat {
         this.tableInputFormat.setConf(config);
     }
 
-    public TableRecordReader getTableReader() {
+    public RecordReader getTableReader() {
         return tableReader;
     }
 
