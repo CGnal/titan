@@ -3,7 +3,7 @@
     <parent>
         <groupId>com.thinkaurelius.titan</groupId>
         <artifactId>titan</artifactId>
-        <version>1.1.0-cdh5.7.0</version>
+        <version>1.1.1-cdh5.7.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <artifactId>titan-all</artifactId>
@@ -63,14 +63,14 @@
             <artifactId>titan-es</artifactId>
             <version>${project.version}</version>
         </dependency>
-        <!--
-        Commented since it requires Hadoop 2 and TP3 requires Hadoop 1.
+
+       <!-- Commented since it requires Hadoop 2 and TP3 requires Hadoop 1. -->
         <dependency>
             <groupId>com.thinkaurelius.titan</groupId>
             <artifactId>titan-solr</artifactId>
             <version>${project.version}</version>
         </dependency>
-        -->
+
         <dependency>
             <groupId>com.thinkaurelius.titan</groupId>
             <artifactId>titan-lucene</artifactId>

@@ -66,7 +66,7 @@ public abstract class LuceneExample {
     public void example1() throws Exception {
         Directory dir = FSDirectory.open(path);
         Analyzer analyzer = new StandardAnalyzer();
-        IndexWriterConfig iwc = new IndexWriterConfig(Version.LUCENE_4_10_4, analyzer);
+        IndexWriterConfig iwc = new IndexWriterConfig(Version.LUCENE_4_10_3, analyzer);
 
         iwc.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
         IndexWriter writer = new IndexWriter(dir, iwc);

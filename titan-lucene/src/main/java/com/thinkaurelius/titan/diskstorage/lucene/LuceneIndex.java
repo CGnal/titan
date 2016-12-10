@@ -63,7 +63,7 @@ public class LuceneIndex implements IndexProvider {
     private static final String GEOID = "_____geo";
     private static final int MAX_STRING_FIELD_LEN = 256;
 
-    private static final Version LUCENE_VERSION = Version.LUCENE_4_10_4;
+    private static final Version LUCENE_VERSION = Version.LUCENE_4_10_3;
     private static final IndexFeatures LUCENE_FEATURES = new IndexFeatures.Builder().supportedStringMappings(Mapping.TEXT, Mapping.STRING).supportsCardinality(Cardinality.SINGLE).supportsNanoseconds().build();
 
     private static final int GEO_MAX_LEVELS = 11;

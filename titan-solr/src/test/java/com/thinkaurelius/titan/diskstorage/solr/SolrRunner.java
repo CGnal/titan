@@ -39,7 +39,8 @@ public class SolrRunner {
         temp.deleteOnExit();
 
         File solrXml = new File(solrHome, "solr.xml");
-        miniSolrCloudCluster = new MiniSolrCloudCluster(NUM_SERVERS, null, temp, solrXml, null, null);
+        //miniSolrCloudCluster = new MiniSolrCloudCluster(NUM_SERVERS, null, temp, solrXml, null, null);
+        miniSolrCloudCluster = null;//new MiniSolrCloudCluster(NUM_SERVERS, null, temp, solrXml, null, null);
 
         for (String core : COLLECTIONS) {
             File coreDirectory = new File(temp.getAbsolutePath() + File.separator + core);

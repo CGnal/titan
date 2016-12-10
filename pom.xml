@@ -1,4 +1,5 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>org.sonatype.oss</groupId>
@@ -7,13 +8,25 @@
     </parent>
     <groupId>com.thinkaurelius.titan</groupId>
     <artifactId>titan</artifactId>
-    <version>1.1.0-cdh5.7.0</version>
+    <version>1.1.1-cdh5.7.0</version>
     <packaging>pom</packaging>
     <prerequisites>
         <maven>2.2.1</maven>
     </prerequisites>
     <name>Titan: Distributed Graph Database</name>
     <url>http://thinkaurelius.github.com/titan/</url>
+
+    <distributionManagement>
+        <snapshotRepository>
+            <id>eligotech-nexus-snapshot</id>
+            <url>http://repo.eligotech.com/nexus/content/repositories/snapshots</url>
+        </snapshotRepository>
+        <repository>
+            <id>eligotech-nexus-release</id>
+            <url>http://repo.eligotech.com/nexus/content/repositories/releases</url>
+        </repository>
+    </distributionManagement>
+
 
     <description>
         Titan is a distributed graph database optimized for processing massive-scale graphs represented over a machine
@@ -63,7 +76,7 @@
         <tag>HEAD</tag>
     </scm>
     <properties>
-        <titan.compatible.versions />
+        <titan.compatible.versions/>
         <tinkerpop.version>3.1.1-incubating</tinkerpop.version>
         <junit.version>4.12</junit.version>
         <mrunit.version>1.1.0</mrunit.version>
@@ -91,7 +104,7 @@
              version used by the titan-lucene module.  When updating
              the ES version, also consider the version of Lucene, and
              vice-versa. -->
-        <lucene.version>4.10.4</lucene.version>
+        <lucene.version>4.10.3-cdh5.7.0</lucene.version>
         <elasticsearch.version>1.5.1</elasticsearch.version>
         <commons.beanutils.version>1.7.0</commons.beanutils.version>
         <joda.version>1.6.2</joda.version>
@@ -100,7 +113,7 @@
         <antlr.version>3.2</antlr.version>
         <asm3.version>3.1</asm3.version>
         <asm4.version>4.0</asm4.version>
-        <zookeeper.version>3.4.6</zookeeper.version>
+        <zookeeper.version>3.4.5-cdh5.7.0</zookeeper.version>
         <jersey.version>1.9</jersey.version>
         <jna.version>4.0.0</jna.version>
         <kuali.s3.wagon.version>1.1.20</kuali.s3.wagon.version>
@@ -109,32 +122,21 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <titan.testdir>${project.build.directory}/titan-test</titan.testdir>
         <gpg.skip>false</gpg.skip>
-        <perf.jvm.opts />
-        <default.test.jvm.opts>-Xms256m -Xmx768m -XX:+HeapDumpOnOutOfMemoryError -ea ${test.extra.jvm.opts}</default.test.jvm.opts>
+        <perf.jvm.opts/>
+        <default.test.jvm.opts>-Xms256m -Xmx768m -XX:+HeapDumpOnOutOfMemoryError -ea ${test.extra.jvm.opts}
+        </default.test.jvm.opts>
         <mem.jvm.opts>-Xms256m -Xmx256m -ea -XX:+HeapDumpOnOutOfMemoryError ${test.extra.jvm.opts}</mem.jvm.opts>
-        <test.extra.jvm.opts />
+        <test.extra.jvm.opts/>
         <test.skip.default>false</test.skip.default>
         <test.skip.tp>true</test.skip.tp>
         <top.level.basedir>${basedir}</top.level.basedir>
         <compiler.source>1.8</compiler.source>
         <compiler.target>1.8</compiler.target>
-        <compiler.args />
-        <test.excluded.groups>com.thinkaurelius.titan.testcategory.MemoryTests,com.thinkaurelius.titan.testcategory.PerformanceTests,com.thinkaurelius.titan.testcategory.BrittleTests</test.excluded.groups>
+        <compiler.args/>
+        <test.excluded.groups>
+            com.thinkaurelius.titan.testcategory.MemoryTests,com.thinkaurelius.titan.testcategory.PerformanceTests,com.thinkaurelius.titan.testcategory.BrittleTests
+        </test.excluded.groups>
     </properties>
-    <modules>
-        <module>titan-core</module>
-        <module>titan-test</module>
-        <module>titan-berkeleyje</module>
-        <module>titan-cassandra</module>
-        <module>titan-hadoop-parent</module>
-        <module>titan-hbase-parent</module>
-        <module>titan-es</module>
-        <module>titan-lucene</module>
-        <module>titan-all</module>
-        <module>titan-dist</module>
-        <module>titan-doc</module>
-        <module>titan-solr</module>
-    </modules>
     <repositories>
         <repository>
             <id>apache-snapshots</id>
@@ -217,8 +219,12 @@
                     <!-- applies to both release:prepare and :perform -->
                     <arguments>-DskipTests=true</arguments>
                 </configuration>
-            </plugin>
 
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+            </plugin>
         </plugins>
         <pluginManagement>
             <plugins>
@@ -282,7 +288,7 @@
                                 </excludes> -->
                                 <skipTests>${test.skip.tp}</skipTests>
                             </configuration>
-                       </execution>
+                        </execution>
                     </executions>
                 </plugin>
                 <plugin>
@@ -344,7 +350,16 @@
                 </plugin>
                 <plugin>
                     <artifactId>maven-source-plugin</artifactId>
-                    <version>2.2.1</version>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <version>3.0.1</version>
+                    <executions>
+                        <execution>
+                            <id>attach-sources</id>
+                            <goals>
+                                <goal>jar</goal>
+                            </goals>
+                        </execution>
+                    </executions>
                 </plugin>
                 <plugin>
                     <artifactId>maven-clean-plugin</artifactId>
@@ -437,6 +452,20 @@
             </plugins>
         </pluginManagement>
     </build>
+    <modules>
+        <module>titan-core</module>
+        <module>titan-test</module>
+        <module>titan-berkeleyje</module>
+        <module>titan-hadoop-parent</module>
+        <module>titan-hbase-parent</module>
+        <module>titan-lucene</module>
+        <module>titan-all</module>
+        <module>titan-es</module>
+        <module>titan-cassandra</module>
+        <!--module>titan-dist</module-->
+        <!--module>titan-doc</module-->
+        <module>titan-solr</module>
+    </modules>
     <dependencyManagement>
         <dependencies>
             <!-- Jackson 2.x -->
@@ -1340,7 +1369,7 @@
                                     <goal>unpack-dependencies</goal>
                                 </goals>
                                 <configuration>
-                                    <classifier />
+                                    <classifier/>
                                     <!-- empty classifier requests the artifact containing classes -->
                                     <outputDirectory>${project.build.directory}/jacoco-classes</outputDirectory>
                                     <includeGroupIds>${project.groupId}</includeGroupIds>
@@ -1383,21 +1412,22 @@
                                 </goals>
                                 <configuration>
                                     <target>
-                                        <taskdef name="report" classname="org.jacoco.ant.ReportTask" classpathref="maven.plugin.classpath" />
+                                        <taskdef name="report" classname="org.jacoco.ant.ReportTask"
+                                                 classpathref="maven.plugin.classpath"/>
                                         <report>
                                             <executiondata>
-                                                <file file="../target/jacoco-combined.exec" />
+                                                <file file="../target/jacoco-combined.exec"/>
                                             </executiondata>
                                             <structure name="Integration test coverage">
                                                 <classfiles>
-                                                    <fileset dir="${project.build.directory}/jacoco-classes" />
+                                                    <fileset dir="${project.build.directory}/jacoco-classes"/>
                                                     u
                                                 </classfiles>
                                                 <sourcefiles encoding="UTF-8">
-                                                    <fileset dir="${project.build.directory}/jacoco-sources" />
+                                                    <fileset dir="${project.build.directory}/jacoco-sources"/>
                                                 </sourcefiles>
                                             </structure>
-                                            <html destdir="${project.build.directory}/jacoco-report" />
+                                            <html destdir="${project.build.directory}/jacoco-report"/>
                                         </report>
                                     </target>
                                 </configuration>
@@ -1443,7 +1473,7 @@
                                     <perCoreThreadCount>false</perCoreThreadCount>
                                     <runOrder>alphabetical</runOrder>
                                     <groups>com.thinkaurelius.titan.testcategory.MemoryTests</groups>
-                                    <excludedGroups />
+                                    <excludedGroups/>
                                 </configuration>
                             </execution>
                         </executions>
@@ -1480,7 +1510,7 @@
                                     <perCoreThreadCount>false</perCoreThreadCount>
                                     <runOrder>alphabetical</runOrder>
                                     <groups>com.thinkaurelius.titan.testcategory.PerformanceTests</groups>
-                                    <excludedGroups />
+                                    <excludedGroups/>
                                 </configuration>
                             </execution>
                         </executions>
@@ -1605,7 +1635,8 @@
                                             </includes>
                                             <stylesheet>${xsl.output.dir}/titansingle.xsl</stylesheet>
                                             <fileMappers>
-                                                <fileMapper implementation="org.codehaus.plexus.components.io.filemappers.FileExtensionMapper">
+                                                <fileMapper
+                                                        implementation="org.codehaus.plexus.components.io.filemappers.FileExtensionMapper">
                                                     <targetExtension>.html</targetExtension>
                                                 </fileMapper>
                                             </fileMappers>
@@ -1630,7 +1661,8 @@
                                             </includes>
                                             <stylesheet>${xsl.output.dir}/titanchunk.xsl</stylesheet>
                                             <fileMappers>
-                                                <fileMapper implementation="org.codehaus.plexus.components.io.filemappers.FileExtensionMapper">
+                                                <fileMapper
+                                                        implementation="org.codehaus.plexus.components.io.filemappers.FileExtensionMapper">
                                                     <targetExtension>.html</targetExtension>
                                                 </fileMapper>
                                             </fileMappers>

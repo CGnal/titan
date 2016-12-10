@@ -3,11 +3,12 @@ package com.thinkaurelius.titan.diskstorage.solr;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Sets;
-
 import com.thinkaurelius.titan.core.Cardinality;
-import com.thinkaurelius.titan.graphdb.internal.Order;
 import com.thinkaurelius.titan.core.TitanElement;
-import com.thinkaurelius.titan.core.attribute.*;
+import com.thinkaurelius.titan.core.attribute.Cmp;
+import com.thinkaurelius.titan.core.attribute.Geo;
+import com.thinkaurelius.titan.core.attribute.Geoshape;
+import com.thinkaurelius.titan.core.attribute.Text;
 import com.thinkaurelius.titan.core.schema.Mapping;
 import com.thinkaurelius.titan.diskstorage.*;
 import com.thinkaurelius.titan.diskstorage.configuration.ConfigNamespace;
@@ -18,14 +19,19 @@ import com.thinkaurelius.titan.diskstorage.solr.transform.GeoToWktConverter;
 import com.thinkaurelius.titan.diskstorage.util.DefaultTransaction;
 import com.thinkaurelius.titan.graphdb.configuration.PreInitializeConfigOptions;
 import com.thinkaurelius.titan.graphdb.database.serialize.AttributeUtil;
+import com.thinkaurelius.titan.graphdb.internal.Order;
 import com.thinkaurelius.titan.graphdb.query.TitanPredicate;
 import com.thinkaurelius.titan.graphdb.query.condition.*;
-
 import com.thinkaurelius.titan.graphdb.types.ParameterType;
 import org.apache.commons.lang.StringUtils;
 import org.apache.http.client.HttpClient;
-import org.apache.solr.client.solrj.*;
-import org.apache.solr.client.solrj.impl.*;
+import org.apache.solr.client.solrj.SolrQuery;
+import org.apache.solr.client.solrj.SolrServer;
+import org.apache.solr.client.solrj.SolrServerException;
+import org.apache.solr.client.solrj.impl.CloudSolrServer;
+import org.apache.solr.client.solrj.impl.HttpClientUtil;
+import org.apache.solr.client.solrj.impl.HttpSolrServer;
+import org.apache.solr.client.solrj.impl.LBHttpSolrServer;
 import org.apache.solr.client.solrj.request.CollectionAdminRequest;
 import org.apache.solr.client.solrj.request.UpdateRequest;
 import org.apache.solr.client.solrj.response.CollectionAdminResponse;
@@ -38,19 +44,18 @@ import org.apache.solr.common.cloud.Replica;
 import org.apache.solr.common.cloud.Slice;
 import org.apache.solr.common.cloud.ZkStateReader;
 import org.apache.solr.common.params.ModifiableSolrParams;
-
 import org.apache.zookeeper.KeeperException;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.time.Instant;
 
 import java.io.IOException;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
-import java.time.Instant;
 import java.util.*;
 
-import static com.thinkaurelius.titan.graphdb.configuration.GraphDatabaseConfiguration.*;
+import static com.thinkaurelius.titan.graphdb.configuration.GraphDatabaseConfiguration.INDEX_MAX_RESULT_SET_SIZE;
+import static com.thinkaurelius.titan.graphdb.configuration.GraphDatabaseConfiguration.INDEX_NS;
 
 /**
  * @author Jared Holmberg (jholmberg@bericotechnoLogies.com), Pavel Yaskevich (pavel@thinkaurelius.com)
@@ -60,8 +65,8 @@ public class SolrIndex implements IndexProvider {
 
     private static final Logger logger = LoggerFactory.getLogger(SolrIndex.class);
 
-
-    private static final String DEFAULT_ID_FIELD = "id";
+    private static final String COLLECTION_PARAM = "collection";
+    private static final String DEFAULT_ID_FIELD = "document_id";
 
     private enum Mode {
         HTTP, CLOUD;
@@ -70,7 +75,7 @@ public class SolrIndex implements IndexProvider {
             for (Mode m : Mode.values()) {
                 if (m.toString().equalsIgnoreCase(mode)) return m;
             }
-            throw new IllegalArgumentException("Unrecognized mode: "+mode);
+            throw new IllegalArgumentException("Unrecognized mode: " + mode);
         }
 
     }
@@ -78,65 +83,65 @@ public class SolrIndex implements IndexProvider {
     public static final ConfigNamespace SOLR_NS =
             new ConfigNamespace(INDEX_NS, "solr", "Solr index configuration");
 
-    public static final ConfigOption<String> SOLR_MODE = new ConfigOption<String>(SOLR_NS,"mode",
+    public static final ConfigOption<String> SOLR_MODE = new ConfigOption<String>(SOLR_NS, "mode",
             "The operation mode for Solr which is either via HTTP (`http`) or using SolrCloud (`cloud`)",
             ConfigOption.Type.GLOBAL_OFFLINE, "cloud");
 
-    public static final ConfigOption<Boolean> DYNAMIC_FIELDS = new ConfigOption<Boolean>(SOLR_NS,"dyn-fields",
+    public static final ConfigOption<Boolean> DYNAMIC_FIELDS = new ConfigOption<Boolean>(SOLR_NS, "dyn-fields",
             "Whether to use dynamic fields (which appends the data type to the field name). If dynamic fields is disabled" +
                     "the user must map field names and define them explicitly in the schema.",
             ConfigOption.Type.GLOBAL_OFFLINE, true);
 
-    public static final ConfigOption<String[]> KEY_FIELD_NAMES = new ConfigOption<String[]>(SOLR_NS,"key-field-names",
+    public static final ConfigOption<String[]> KEY_FIELD_NAMES = new ConfigOption<String[]>(SOLR_NS, "key-field-names",
             "Field name that uniquely identifies each document in Solr. Must be specified as a list of `collection=field`.",
             ConfigOption.Type.GLOBAL, String[].class);
 
-    public static final ConfigOption<String> TTL_FIELD = new ConfigOption<String>(SOLR_NS,"ttl_field",
+    public static final ConfigOption<String> TTL_FIELD = new ConfigOption<String>(SOLR_NS, "ttl_field",
             "Name of the TTL field for Solr collections.",
             ConfigOption.Type.GLOBAL_OFFLINE, "ttl");
 
-    /** SolrCloud Configuration */
+    /**
+     * SolrCloud Configuration
+     */
 
-    public static final ConfigOption<String> ZOOKEEPER_URL = new ConfigOption<String>(SOLR_NS,"zookeeper-url",
+    public static final ConfigOption<String> ZOOKEEPER_URL = new ConfigOption<String>(SOLR_NS, "zookeeper-url",
             "URL of the Zookeeper instance coordinating the SolrCloud cluster",
             ConfigOption.Type.MASKABLE, "localhost:2181");
 
-    public static final ConfigOption<Integer> NUM_SHARDS = new ConfigOption<Integer>(SOLR_NS,"num-shards",
+    public static final ConfigOption<Integer> NUM_SHARDS = new ConfigOption<Integer>(SOLR_NS, "num-shards",
             "Number of shards for a collection. This applies when creating a new collection which is only supported under the SolrCloud operation mode.",
             ConfigOption.Type.GLOBAL_OFFLINE, 1);
 
-    public static final ConfigOption<Integer> MAX_SHARDS_PER_NODE = new ConfigOption<Integer>(SOLR_NS,"max-shards-per-node",
+    public static final ConfigOption<Integer> MAX_SHARDS_PER_NODE = new ConfigOption<Integer>(SOLR_NS, "max-shards-per-node",
             "Maximum number of shards per node. This applies when creating a new collection which is only supported under the SolrCloud operation mode.",
             ConfigOption.Type.GLOBAL_OFFLINE, 1);
 
-    public static final ConfigOption<Integer> REPLICATION_FACTOR = new ConfigOption<Integer>(SOLR_NS,"replication-factor",
+    public static final ConfigOption<Integer> REPLICATION_FACTOR = new ConfigOption<Integer>(SOLR_NS, "replication-factor",
             "Replication factor for a collection. This applies when creating a new collection which is only supported under the SolrCloud operation mode.",
             ConfigOption.Type.GLOBAL_OFFLINE, 1);
 
-    public static final ConfigOption<String> SOLR_DEFAULT_CONFIG = new ConfigOption<String>(SOLR_NS,"configset",
-            "If specified, the same solr configSet can be resued for each new Collection that is created in SolrCloud.",
-            ConfigOption.Type.MASKABLE, String.class);
 
+    /**
+     * HTTP Configuration
+     */
 
-    /** HTTP Configuration */
+    public static final ConfigOption<String[]> HTTP_URLS = new ConfigOption<String[]>(SOLR_NS, "http-urls",
+            "List of URLs to use to connect to Solr Servers (LBSolrServer is used), don't add core or collection name to the URL.",
+            ConfigOption.Type.MASKABLE, new String[]{"http://localhost:8983/solr"});
 
-    public static final ConfigOption<String[]> HTTP_URLS = new ConfigOption<String[]>(SOLR_NS,"http-urls",
-            "List of URLs to use to connect to Solr Servers (LBHttpSolrClient is used), don't add core or collection name to the URL.",
-            ConfigOption.Type.MASKABLE, new String[] { "http://localhost:8983/solr" });
-
-    public static final ConfigOption<Integer> HTTP_CONNECTION_TIMEOUT = new ConfigOption<Integer>(SOLR_NS,"http-connection-timeout",
+    public static final ConfigOption<Integer> HTTP_CONNECTION_TIMEOUT = new ConfigOption<Integer>(SOLR_NS, "http-connection-timeout",
             "Solr HTTP connection timeout.",
             ConfigOption.Type.MASKABLE, 5000);
 
-    public static final ConfigOption<Boolean> HTTP_ALLOW_COMPRESSION = new ConfigOption<Boolean>(SOLR_NS,"http-compression",
+    public static final ConfigOption<Boolean> HTTP_ALLOW_COMPRESSION = new ConfigOption<Boolean>(SOLR_NS, "http-compression",
             "Enable/disable compression on the HTTP connections made to Solr.",
             ConfigOption.Type.MASKABLE, false);
 
-    public static final ConfigOption<Integer> HTTP_MAX_CONNECTIONS_PER_HOST = new ConfigOption<Integer>(SOLR_NS,"http-max-per-host",
+    public static final ConfigOption<Integer> HTTP_MAX_CONNECTIONS_PER_HOST = new ConfigOption<Integer>(SOLR_NS, "http-max-per-host",
             "Maximum number of HTTP connections per Solr host.",
             ConfigOption.Type.MASKABLE, 20);
 
-    public static final ConfigOption<Integer> HTTP_GLOBAL_MAX_CONNECTIONS = new ConfigOption<Integer>(SOLR_NS,"http-max",
+    public static final ConfigOption<Integer> HTTP_GLOBAL_MAX_CONNECTIONS = new ConfigOption<Integer>(SOLR_NS, "http-max",
             "Maximum number of HTTP connections in total to all Solr servers.",
             ConfigOption.Type.MASKABLE, 100);
 
@@ -144,11 +149,10 @@ public class SolrIndex implements IndexProvider {
             "When mutating - wait for the index to reflect new mutations before returning. This can have a negative impact on performance.",
             ConfigOption.Type.LOCAL, false);
 
-
     private static final IndexFeatures SOLR_FEATURES = new IndexFeatures.Builder().supportsDocumentTTL()
             .setDefaultStringMapping(Mapping.TEXT).supportedStringMappings(Mapping.TEXT, Mapping.STRING).supportsCardinality(Cardinality.SINGLE).build();
 
-    private final SolrClient solrClient;
+    private final SolrServer solrServer;
     private final Configuration configuration;
     private final Mode mode;
     private final boolean dynFields;
@@ -158,7 +162,7 @@ public class SolrIndex implements IndexProvider {
     private final boolean waitSearcher;
 
     public SolrIndex(final Configuration config) throws BackendException {
-        Preconditions.checkArgument(config!=null);
+        Preconditions.checkArgument(config != null);
         configuration = config;
 
         mode = Mode.parse(config.get(SOLR_MODE));
@@ -168,30 +172,32 @@ public class SolrIndex implements IndexProvider {
         ttlField = config.get(TTL_FIELD);
         waitSearcher = config.get(WAIT_SEARCHER);
 
-        if (mode==Mode.CLOUD) {
-            String zookeeperUrl = config.get(SolrIndex.ZOOKEEPER_URL);
-            CloudSolrClient cloudServer = new CloudSolrClient(zookeeperUrl, true);
-            cloudServer.connect();
-            solrClient = cloudServer;
-        } else if (mode==Mode.HTTP) {
-            HttpClient clientParams = HttpClientUtil.createClient(new ModifiableSolrParams() {{
-                add(HttpClientUtil.PROP_ALLOW_COMPRESSION, config.get(HTTP_ALLOW_COMPRESSION).toString());
-                add(HttpClientUtil.PROP_CONNECTION_TIMEOUT, config.get(HTTP_CONNECTION_TIMEOUT).toString());
-                add(HttpClientUtil.PROP_MAX_CONNECTIONS_PER_HOST, config.get(HTTP_MAX_CONNECTIONS_PER_HOST).toString());
-                add(HttpClientUtil.PROP_MAX_CONNECTIONS, config.get(HTTP_GLOBAL_MAX_CONNECTIONS).toString());
-            }});
+        try {
+            if (mode == Mode.CLOUD) {
+                String zookeeperUrl = config.get(SolrIndex.ZOOKEEPER_URL);
+                CloudSolrServer cloudServer = new CloudSolrServer(zookeeperUrl, true);
+                cloudServer.connect();
+                solrServer = cloudServer;
+            } else if (mode == Mode.HTTP) {
+                HttpClient clientParams = HttpClientUtil.createClient(new ModifiableSolrParams() {{
+                    add(HttpClientUtil.PROP_ALLOW_COMPRESSION, config.get(HTTP_ALLOW_COMPRESSION).toString());
+                    add(HttpClientUtil.PROP_CONNECTION_TIMEOUT, config.get(HTTP_CONNECTION_TIMEOUT).toString());
+                    add(HttpClientUtil.PROP_MAX_CONNECTIONS_PER_HOST, config.get(HTTP_MAX_CONNECTIONS_PER_HOST).toString());
+                    add(HttpClientUtil.PROP_MAX_CONNECTIONS, config.get(HTTP_GLOBAL_MAX_CONNECTIONS).toString());
+                }});
 
-            solrClient = new LBHttpSolrClient(clientParams, config.get(HTTP_URLS));
-
-
-        } else {
-            throw new IllegalArgumentException("Unsupported Solr operation mode: " + mode);
+                solrServer = new LBHttpSolrServer(clientParams, config.get(HTTP_URLS));
+            } else {
+                throw new IllegalArgumentException("Unsupported Solr operation mode: " + mode);
+            }
+        } catch (IOException e) {
+            throw new PermanentBackendException(e);
         }
     }
 
     private Map<String, String> parseKeyFieldsForCollections(Configuration config) throws BackendException {
         Map<String, String> keyFieldNames = new HashMap<String, String>();
-        String[] collectionFieldStatements = config.has(KEY_FIELD_NAMES)?config.get(KEY_FIELD_NAMES):new String[0];
+        String[] collectionFieldStatements = config.has(KEY_FIELD_NAMES) ? config.get(KEY_FIELD_NAMES) : new String[0];
         for (String collectionFieldStatement : collectionFieldStatements) {
             String[] parts = collectionFieldStatement.trim().split("=");
             if (parts.length != 2) {
@@ -206,7 +212,7 @@ public class SolrIndex implements IndexProvider {
 
     private String getKeyFieldId(String collection) {
         String field = keyFieldIds.get(collection);
-        if (field==null) field = DEFAULT_ID_FIELD;
+        if (field == null) field = DEFAULT_ID_FIELD;
         return field;
     }
 
@@ -215,18 +221,19 @@ public class SolrIndex implements IndexProvider {
      * support searching. This means that you will need to modify the solr schema with the
      * appropriate field definitions in order to work properly.  If you have a running instance
      * of Solr and you modify its schema with new fields, don't forget to re-index!
-     * @param store Index store
-     * @param key New key to register
+     *
+     * @param store       Index store
+     * @param key         New key to register
      * @param information Datatype to register for the key
-     * @param tx enclosing transaction
+     * @param tx          enclosing transaction
      * @throws com.thinkaurelius.titan.diskstorage.BackendException
      */
     @Override
     public void register(String store, String key, KeyInformation information, BaseTransaction tx) throws BackendException {
-        if (mode==Mode.CLOUD) {
-            CloudSolrClient client = (CloudSolrClient) solrClient;
+        if (mode == Mode.CLOUD) {
+            CloudSolrServer cloudServer = (CloudSolrServer) solrServer;
             try {
-                createCollectionIfNotExists(client, configuration, store);
+                createCollectionIfNotExists(cloudServer, configuration, store);
             } catch (IOException e) {
                 throw new PermanentBackendException(e);
             } catch (SolrServerException e) {
@@ -242,7 +249,6 @@ public class SolrIndex implements IndexProvider {
 
     @Override
     public void mutate(Map<String, Map<String, IndexMutation>> mutations, KeyInformation.IndexRetriever informations, BaseTransaction tx) throws BackendException {
-        logger.debug("Mutating SOLR");
         try {
             for (Map.Entry<String, Map<String, IndexMutation>> stores : mutations.entrySet()) {
                 String collectionName = stores.getKey();
@@ -292,8 +298,8 @@ public class SolrIndex implements IndexProvider {
                                 put("set", fieldValue);
                             }});
                         }
-                        if (ttl>0) {
-                            Preconditions.checkArgument(isNewDoc,"Solr only supports TTL on new documents [%s]",docId);
+                        if (ttl > 0) {
+                            Preconditions.checkArgument(isNewDoc, "Solr only supports TTL on new documents [%s]", docId);
                             doc.setField(ttlField, String.format("+%dSECONDS", ttl));
                         }
                         changes.add(doc);
@@ -311,12 +317,17 @@ public class SolrIndex implements IndexProvider {
     }
 
     private Object convertValue(Object value) throws BackendException {
-        if (value instanceof Geoshape) {
+        if (value instanceof Geoshape)
             return GeoToWktConverter.convertToWktString((Geoshape) value);
-        }
-        if (value instanceof UUID) {
+
+  /*      // in order to serialize/deserialize properly Solr will have to have an
+        // access to Titan source which has Decimal type, so for now we simply convert to
+        // double and let Solr do the same thing or fail.
+        if (value instanceof AbstractDecimal)
+            return ((AbstractDecimal) value).doubleValue();*/
+
+        if (value instanceof UUID)
             return value.toString();
-        }
         if(value instanceof Instant) {
             if(Math.floorMod(((Instant) value).getNano(), 1000000) != 0) {
                 throw new IllegalArgumentException("Solr indexes do not support nanoseconds");
@@ -368,7 +379,9 @@ public class SolrIndex implements IndexProvider {
     private void deleteIndividualFieldsFromIndex(String collectionName, String keyIdField, String docId, HashSet<IndexEntry> fieldDeletions) throws SolrServerException, IOException {
         if (fieldDeletions.isEmpty()) return;
 
-        Map<String, String> fieldDeletes = new HashMap<String, String>(1) {{ put("set", null); }};
+        Map<String, String> fieldDeletes = new HashMap<String, String>(1) {{
+            put("set", null);
+        }};
 
         SolrInputDocument doc = new SolrInputDocument();
         doc.addField(keyIdField, docId);
@@ -381,17 +394,17 @@ public class SolrIndex implements IndexProvider {
         if (logger.isTraceEnabled())
             logger.trace("Deleting individual fields [{}] for document {}", sb.toString(), docId);
 
-        UpdateRequest singleDocument = newUpdateRequest();
+        UpdateRequest singleDocument = newUpdateRequest(collectionName);
         singleDocument.add(doc);
-        solrClient.request(singleDocument, collectionName);
+        solrServer.request(singleDocument);
     }
 
     private void commitDocumentChanges(String collectionName, Collection<SolrInputDocument> documents) throws SolrServerException, IOException {
         if (documents.size() == 0) return;
 
         try {
-            solrClient.request(newUpdateRequest().add(documents), collectionName);
-        } catch (HttpSolrClient.RemoteSolrException rse) {
+            solrServer.request(newUpdateRequest(collectionName).add(documents));
+        } catch (HttpSolrServer.RemoteSolrException rse) {
             logger.error("Unable to save documents to Solr as one of the shape objects stored were not compatible with Solr.", rse);
             logger.error("Details in failed document batch: ");
             for (SolrInputDocument d : documents) {
@@ -407,7 +420,7 @@ public class SolrIndex implements IndexProvider {
 
     private void commitDeletes(String collectionName, List<String> deleteIds) throws SolrServerException, IOException {
         if (deleteIds.size() == 0) return;
-        solrClient.request(newUpdateRequest().deleteById(deleteIds), collectionName);
+        solrServer.request(newUpdateRequest(collectionName).deleteById(deleteIds));
     }
 
     @Override
@@ -415,7 +428,7 @@ public class SolrIndex implements IndexProvider {
         List<String> result;
         String collection = query.getStore();
         String keyIdField = getKeyFieldId(collection);
-        SolrQuery solrQuery = new SolrQuery("*:*");
+        SolrQuery solrQuery = newQuery(collection, "*:*");
         String queryFilter = buildQueryFilter(query.getCondition(), informations.get(collection));
         solrQuery.addFilterQuery(queryFilter);
         if (!query.getOrder().isEmpty()) {
@@ -433,7 +446,7 @@ public class SolrIndex implements IndexProvider {
             solrQuery.setRows(maxResults);
         }
         try {
-            QueryResponse response = solrClient.query(collection, solrQuery);
+            QueryResponse response = solrServer.query(solrQuery);
 
             if (logger.isDebugEnabled())
                 logger.debug("Executed query [{}] in {} ms", query.getCondition(), response.getElapsedTime());
@@ -447,8 +460,8 @@ public class SolrIndex implements IndexProvider {
             for (SolrDocument hit : response.getResults()) {
                 result.add(hit.getFieldValue(keyIdField).toString());
             }
-        } catch (IOException e) {
-            logger.error("Query did not complete : ", e);
+        } catch (HttpSolrServer.RemoteSolrException e) {
+            logger.error("Query did not complete because parameters were not recognized : ", e);
             throw new PermanentBackendException(e);
         } catch (SolrServerException e) {
             logger.error("Unable to query Solr index.", e);
@@ -462,14 +475,14 @@ public class SolrIndex implements IndexProvider {
         List<RawQuery.Result<String>> result;
         String collection = query.getStore();
         String keyIdField = getKeyFieldId(collection);
-        SolrQuery solrQuery = new SolrQuery(query.getQuery())
-                                .addField(keyIdField)
-                                .setIncludeScore(true)
-                                .setStart(query.getOffset())
-                                .setRows(query.hasLimit() ? query.getLimit() : maxResults);
+        SolrQuery solrQuery = newQuery(collection, query.getQuery())
+                .addField(keyIdField)
+                .setIncludeScore(true)
+                .setStart(query.getOffset())
+                .setRows(query.hasLimit() ? query.getLimit() : maxResults);
 
         try {
-            QueryResponse response = solrClient.query(collection, solrQuery);
+            QueryResponse response = solrServer.query(solrQuery);
             if (logger.isDebugEnabled())
                 logger.debug("Executed query [{}] in {} ms", query.getQuery(), response.getElapsedTime());
 
@@ -483,8 +496,8 @@ public class SolrIndex implements IndexProvider {
                 double score = Double.parseDouble(hit.getFieldValue("score").toString());
                 result.add(new RawQuery.Result<String>(hit.getFieldValue(keyIdField).toString(), score));
             }
-        } catch (IOException e) {
-            logger.error("Query did not complete : ", e);
+        } catch (HttpSolrServer.RemoteSolrException e) {
+            logger.error("Query did not complete because parameters were not recognized : ", e);
             throw new PermanentBackendException(e);
         } catch (SolrServerException e) {
             logger.error("Unable to query Solr index.", e);
@@ -523,14 +536,15 @@ public class SolrIndex implements IndexProvider {
                         return (key + ":{" + queryValue + " TO *]");
                     case GREATER_THAN_EQUAL:
                         return (key + ":[" + queryValue + " TO *]");
-                    default: throw new IllegalArgumentException("Unexpected relation: " + numRel);
+                    default:
+                        throw new IllegalArgumentException("Unexpected relation: " + numRel);
                 }
             } else if (value instanceof String) {
                 Mapping map = getStringMapping(informations.get(key));
-                assert map==Mapping.TEXT || map==Mapping.STRING;
-                if (map==Mapping.TEXT && !titanPredicate.toString().startsWith("CONTAINS"))
+                assert map == Mapping.TEXT || map == Mapping.STRING;
+                if (map == Mapping.TEXT && !titanPredicate.toString().startsWith("CONTAINS"))
                     throw new IllegalArgumentException("Text mapped string values only support CONTAINS queries and not: " + titanPredicate);
-                if (map==Mapping.STRING && titanPredicate.toString().startsWith("CONTAINS"))
+                if (map == Mapping.STRING && titanPredicate.toString().startsWith("CONTAINS"))
                     throw new IllegalArgumentException("String mapped string values do not support CONTAINS queries: " + titanPredicate);
 
                 //Special case
@@ -566,7 +580,7 @@ public class SolrIndex implements IndexProvider {
                     throw new IllegalArgumentException("Relation is not supported for string value: " + titanPredicate);
                 }
             } else if (value instanceof Geoshape) {
-                Geoshape geo = (Geoshape)value;
+                Geoshape geo = (Geoshape) value;
                 if (geo.getType() == Geoshape.Type.CIRCLE) {
                     Geoshape.Point center = geo.getPoint();
                     return ("{!geofilt sfield=" + key +
@@ -609,7 +623,8 @@ public class SolrIndex implements IndexProvider {
                         return (key + ":{" + queryValue + " TO *]");
                     case GREATER_THAN_EQUAL:
                         return (key + ":[" + queryValue + " TO *]");
-                    default: throw new IllegalArgumentException("Unexpected relation: " + numRel);
+                    default:
+                        throw new IllegalArgumentException("Unexpected relation: " + numRel);
                 }
             } else if (value instanceof Boolean) {
                 Cmp numRel = (Cmp) titanPredicate;
@@ -632,8 +647,8 @@ public class SolrIndex implements IndexProvider {
                 }
             } else throw new IllegalArgumentException("Unsupported type: " + value);
         } else if (condition instanceof Not) {
-            String sub = buildQueryFilter(((Not)condition).getChild(),informations);
-            if (StringUtils.isNotBlank(sub)) return "-("+sub+")";
+            String sub = buildQueryFilter(((Not) condition).getChild(), informations);
+            if (StringUtils.isNotBlank(sub)) return "-(" + sub + ")";
             else return "";
         } else if (condition instanceof And) {
             int numChildren = ((And) condition).size();
@@ -655,16 +670,16 @@ public class SolrIndex implements IndexProvider {
             return sb.toString();
         } else if (condition instanceof Or) {
             StringBuilder sb = new StringBuilder();
-            int element=0;
+            int element = 0;
             for (Condition<TitanElement> c : condition.getChildren()) {
-                String sub = buildQueryFilter(c,informations);
+                String sub = buildQueryFilter(c, informations);
                 if (StringUtils.isBlank(sub)) continue;
-                if (element==0) sb.append("(");
+                if (element == 0) sb.append("(");
                 else sb.append(" OR ");
                 sb.append(sub);
                 element++;
             }
-            if (element>0) sb.append(")");
+            if (element > 0) sb.append(")");
             return sb.toString();
         } else {
             throw new IllegalArgumentException("Invalid condition: " + condition);
@@ -674,7 +689,7 @@ public class SolrIndex implements IndexProvider {
 
     private String toIsoDate(Date value) {
         TimeZone tz = TimeZone.getTimeZone("UTC");
-        DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+        DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
         df.setTimeZone(tz);
         return df.format(value);
     }
@@ -713,27 +728,23 @@ public class SolrIndex implements IndexProvider {
 
     @Override
     public void close() throws BackendException {
-        logger.trace("Shutting down connection to Solr", solrClient);
-        try {
-            solrClient.close();
-        } catch (IOException e) {
-            throw new TemporaryBackendException(e);
-        }
+        logger.trace("Shutting down connection to Solr", solrServer);
+        solrServer.shutdown();
     }
 
     @Override
     public void clearStorage() throws BackendException {
         try {
-            if (mode!=Mode.CLOUD) throw new UnsupportedOperationException("Operation only supported for SolrCloud");
-            logger.debug("Clearing storage from Solr: {}", solrClient);
-            ZkStateReader zkStateReader = ((CloudSolrClient) solrClient).getZkStateReader();
+            if (mode != Mode.CLOUD) throw new UnsupportedOperationException("Operation only supported for SolrCloud");
+            logger.debug("Clearing storage from Solr: {}", solrServer);
+            ZkStateReader zkStateReader = ((CloudSolrServer) solrServer).getZkStateReader();
             zkStateReader.updateClusterState(true);
             ClusterState clusterState = zkStateReader.getClusterState();
             for (String collection : clusterState.getCollections()) {
-                logger.debug("Clearing collection [{}] in Solr",collection);
-                UpdateRequest deleteAll = newUpdateRequest();
+                logger.debug("Clearing collection [{}] in Solr", collection);
+                UpdateRequest deleteAll = newUpdateRequest(collection);
                 deleteAll.deleteByQuery("*:*");
-                solrClient.request(deleteAll, collection);
+                solrServer.request(deleteAll);
             }
 
         } catch (SolrServerException e) {
@@ -752,7 +763,7 @@ public class SolrIndex implements IndexProvider {
     public boolean supports(KeyInformation information, TitanPredicate titanPredicate) {
         Class<?> dataType = information.getDataType();
         Mapping mapping = Mapping.getMapping(information);
-        if (mapping!=Mapping.DEFAULT && !AttributeUtil.isString(dataType)) return false;
+        if (mapping != Mapping.DEFAULT && !AttributeUtil.isString(dataType)) return false;
 
         if(information.getCardinality() != Cardinality.SINGLE) {
             return false;
@@ -763,21 +774,21 @@ public class SolrIndex implements IndexProvider {
         } else if (dataType == Geoshape.class) {
             return titanPredicate == Geo.WITHIN;
         } else if (AttributeUtil.isString(dataType)) {
-            switch(mapping) {
+            switch (mapping) {
                 case DEFAULT:
                 case TEXT:
                     return titanPredicate == Text.CONTAINS || titanPredicate == Text.CONTAINS_PREFIX || titanPredicate == Text.CONTAINS_REGEX;
                 case STRING:
-                    return titanPredicate == Cmp.EQUAL || titanPredicate==Cmp.NOT_EQUAL || titanPredicate==Text.REGEX || titanPredicate==Text.PREFIX;
+                    return titanPredicate == Cmp.EQUAL || titanPredicate == Cmp.NOT_EQUAL || titanPredicate == Text.REGEX || titanPredicate == Text.PREFIX;
 //                case TEXTSTRING:
 //                    return (titanPredicate instanceof Text) || titanPredicate == Cmp.EQUAL || titanPredicate==Cmp.NOT_EQUAL;
             }
-        } else if (dataType == Date.class || dataType == Instant.class) {
+        } else if (dataType == Date.class) {
             if (titanPredicate instanceof Cmp) return true;
         } else if (dataType == Boolean.class) {
             return titanPredicate == Cmp.EQUAL || titanPredicate == Cmp.NOT_EQUAL;
         } else if (dataType == UUID.class) {
-            return titanPredicate == Cmp.EQUAL || titanPredicate==Cmp.NOT_EQUAL;
+            return titanPredicate == Cmp.EQUAL || titanPredicate == Cmp.NOT_EQUAL;
         }
         return false;
     }
@@ -790,16 +801,16 @@ public class SolrIndex implements IndexProvider {
         Class<?> dataType = information.getDataType();
         Mapping mapping = Mapping.getMapping(information);
         if (Number.class.isAssignableFrom(dataType) || dataType == Geoshape.class || dataType == Date.class || dataType == Instant.class || dataType == Boolean.class || dataType == UUID.class) {
-            if (mapping==Mapping.DEFAULT) return true;
+            if (mapping == Mapping.DEFAULT) return true;
         } else if (AttributeUtil.isString(dataType)) {
-            if (mapping==Mapping.DEFAULT || mapping==Mapping.TEXT || mapping==Mapping.STRING) return true;
+            if (mapping == Mapping.DEFAULT || mapping == Mapping.TEXT || mapping == Mapping.STRING) return true;
         }
         return false;
     }
 
     @Override
     public String mapKey2Field(String key, KeyInformation keyInfo) {
-        Preconditions.checkArgument(!StringUtils.containsAny(key, new char[]{' '}),"Invalid key name provided: %s",key);
+        Preconditions.checkArgument(!StringUtils.containsAny(key, new char[]{' '}), "Invalid key name provided: %s", key);
         if (!dynFields) return key;
         if (ParameterType.MAPPED_NAME.hasParameter(keyInfo.getParameters())) return key;
         String postfix;
@@ -807,9 +818,14 @@ public class SolrIndex implements IndexProvider {
         if (AttributeUtil.isString(datatype)) {
             Mapping map = getStringMapping(keyInfo);
             switch (map) {
-                case TEXT: postfix = "_t"; break;
-                case STRING: postfix = "_s"; break;
-                default: throw new IllegalArgumentException("Unsupported string mapping: " + map);
+                case TEXT:
+                    postfix = "_t";
+                    break;
+                case STRING:
+                    postfix = "_s";
+                    break;
+                default:
+                    throw new IllegalArgumentException("Unsupported string mapping: " + map);
             }
         } else if (AttributeUtil.isWholeNumber(datatype)) {
             if (datatype.equals(Long.class)) postfix = "_l";
@@ -825,8 +841,8 @@ public class SolrIndex implements IndexProvider {
             postfix = "_b";
         } else if (datatype.equals(UUID.class)) {
             postfix = "_uuid";
-        } else throw new IllegalArgumentException("Unsupported data type ["+datatype+"] for field: " + key);
-        return key+postfix;
+        } else throw new IllegalArgumentException("Unsupported data type [" + datatype + "] for field: " + key);
+        return key + postfix;
     }
 
     @Override
@@ -841,45 +857,44 @@ public class SolrIndex implements IndexProvider {
     private static Mapping getStringMapping(KeyInformation information) {
         assert AttributeUtil.isString(information.getDataType());
         Mapping map = Mapping.getMapping(information);
-        if (map==Mapping.DEFAULT) map = Mapping.TEXT;
+        if (map == Mapping.DEFAULT) map = Mapping.TEXT;
         return map;
     }
 
-    private UpdateRequest newUpdateRequest() {
+    private UpdateRequest newUpdateRequest(String collection) {
         UpdateRequest req = new UpdateRequest();
-        if(waitSearcher) {
+        req.setParam(COLLECTION_PARAM, collection);
+        req.setAction(UpdateRequest.ACTION.COMMIT, true, true);
+        if (waitSearcher) {
             req.setAction(UpdateRequest.ACTION.COMMIT, true, true);
         }
         return req;
+    }
+
+    private static SolrQuery newQuery(String collection, String query) {
+        return new SolrQuery().setParam(COLLECTION_PARAM, collection).setQuery(query);
     }
 
     private BackendException storageException(Exception solrException) {
         return new TemporaryBackendException("Unable to complete query on Solr.", solrException);
     }
 
-    private static void createCollectionIfNotExists(CloudSolrClient client, Configuration config, String collection)
+    private static void createCollectionIfNotExists(CloudSolrServer server, Configuration config, String collection)
             throws IOException, SolrServerException, KeeperException, InterruptedException {
-        if (!checkIfCollectionExists(client, collection)) {
+        if (!checkIfCollectionExists(server, collection)) {
             Integer numShards = config.get(NUM_SHARDS);
             Integer maxShardsPerNode = config.get(MAX_SHARDS_PER_NODE);
             Integer replicationFactor = config.get(REPLICATION_FACTOR);
 
-
-            // Ideally this property used so a new configset is not uploaded for every single
-            // index (collection) created in solr.
-            // if a generic configSet is not set, make the configset name the same as the collection.
-            // This was the default behavior before a default configSet could be specified 
-            String  genericConfigSet = config.has(SOLR_DEFAULT_CONFIG) ? config.get(SOLR_DEFAULT_CONFIG):collection;
-
             CollectionAdminRequest.Create createRequest = new CollectionAdminRequest.Create();
 
-            createRequest.setConfigName(genericConfigSet);
+            createRequest.setConfigName(collection);
             createRequest.setCollectionName(collection);
             createRequest.setNumShards(numShards);
             createRequest.setMaxShardsPerNode(maxShardsPerNode);
             createRequest.setReplicationFactor(replicationFactor);
 
-            CollectionAdminResponse createResponse = createRequest.process(client);
+            CollectionAdminResponse createResponse = createRequest.process(server);
             if (createResponse.isSuccess()) {
                 logger.trace("Collection {} successfully created.", collection);
             } else {
@@ -887,13 +902,13 @@ public class SolrIndex implements IndexProvider {
             }
         }
 
-        waitForRecoveriesToFinish(client, collection);
+        waitForRecoveriesToFinish(server, collection);
     }
 
     /**
      * Checks if the collection has already been created in Solr.
      */
-    private static boolean checkIfCollectionExists(CloudSolrClient server, String collection) throws KeeperException, InterruptedException {
+    private static boolean checkIfCollectionExists(CloudSolrServer server, String collection) throws KeeperException, InterruptedException {
         ZkStateReader zkStateReader = server.getZkStateReader();
         zkStateReader.updateClusterState(true);
         ClusterState clusterState = zkStateReader.getClusterState();
@@ -903,7 +918,7 @@ public class SolrIndex implements IndexProvider {
     /**
      * Wait for all the collection shards to be ready.
      */
-    private static void waitForRecoveriesToFinish(CloudSolrClient server, String collection) throws KeeperException, InterruptedException {
+    private static void waitForRecoveriesToFinish(CloudSolrServer server, String collection) throws KeeperException, InterruptedException {
         ZkStateReader zkStateReader = server.getZkStateReader();
         try {
             boolean cont = true;
@@ -915,21 +930,19 @@ public class SolrIndex implements IndexProvider {
                 Map<String, Slice> slices = clusterState.getSlicesMap(collection);
                 Preconditions.checkNotNull("Could not find collection:" + collection, slices);
 
-               // change paths for Replica.State per Solr refactoring
-               // remove SYNC state per: http://tinyurl.com/pag6rwt
-               for (Map.Entry<String, Slice> entry : slices.entrySet()) {
+                for (Map.Entry<String, Slice> entry : slices.entrySet()) {
                     Map<String, Replica> shards = entry.getValue().getReplicasMap();
                     for (Map.Entry<String, Replica> shard : shards.entrySet()) {
                         String state = shard.getValue().getStr(ZkStateReader.STATE_PROP);
-                        if ((state.equals(Replica.State.RECOVERING) || state.equals(Replica.State.DOWN))
+                        if ((state.equals(ZkStateReader.RECOVERING)
+                                || state.equals(ZkStateReader.SYNC) || state
+                                .equals(ZkStateReader.DOWN))
                                 && clusterState.liveNodesContain(shard.getValue().getStr(
                                 ZkStateReader.NODE_NAME_PROP))) {
                             sawLiveRecovering = true;
                         }
                     }
                 }
-
-
                 if (!sawLiveRecovering) {
                     cont = false;
                 } else {
@@ -942,3 +955,4 @@ public class SolrIndex implements IndexProvider {
     }
 
 }
+
