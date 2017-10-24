@@ -124,20 +124,6 @@
         <compiler.args />
         <test.excluded.groups>com.thinkaurelius.titan.testcategory.MemoryTests,com.thinkaurelius.titan.testcategory.PerformanceTests,com.thinkaurelius.titan.testcategory.BrittleTests</test.excluded.groups>
     </properties>
-    <modules>
-        <module>titan-core</module>
-        <module>titan-test</module>
-        <module>titan-berkeleyje</module>
-        <module>titan-cassandra</module>
-        <module>titan-hadoop-parent</module>
-        <module>titan-hbase-parent</module>
-        <module>titan-es</module>
-        <module>titan-lucene</module>
-        <module>titan-all</module>
-        <module>titan-dist</module>
-        <module>titan-doc</module>
-        <module>titan-solr</module>
-    </modules>
     <repositories>
         <repository>
             <id>apache-snapshots</id>
@@ -225,7 +211,10 @@
                     <arguments>-DskipTests=true</arguments>
                 </configuration>
             </plugin>
-
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+            </plugin>
         </plugins>
         <pluginManagement>
             <plugins>
@@ -351,7 +340,16 @@
                 </plugin>
                 <plugin>
                     <artifactId>maven-source-plugin</artifactId>
-                    <version>2.2.1</version>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <version>3.0.1</version>
+                    <executions>
+                        <execution>
+                            <id>attach-sources</id>
+                            <goals>
+                                <goal>jar</goal>
+                            </goals>
+                        </execution>
+                    </executions>
                 </plugin>
                 <plugin>
                     <artifactId>maven-clean-plugin</artifactId>
@@ -444,6 +442,20 @@
             </plugins>
         </pluginManagement>
     </build>
+    <modules>
+        <module>titan-core</module>
+        <module>titan-test</module>
+        <module>titan-berkeleyje</module>
+        <module>titan-cassandra</module>
+        <module>titan-hadoop-parent</module>
+        <module>titan-hbase-parent</module>
+        <module>titan-es</module>
+        <module>titan-lucene</module>
+        <module>titan-all</module>
+        <!--module>titan-dist</module>
+        <module>titan-doc</module-->
+        <module>titan-solr</module>
+    </modules>
     <dependencyManagement>
         <dependencies>
             <!-- Jackson 2.x -->
