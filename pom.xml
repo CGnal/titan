@@ -7,7 +7,7 @@
     </parent>
     <groupId>com.thinkaurelius.titan</groupId>
     <artifactId>titan</artifactId>
-    <version>1.1.0-hdp2.6.0</version>
+    <version>1.1.0-hdp2.6.2</version>
     <packaging>pom</packaging>
     <prerequisites>
         <maven>2.2.1</maven>
@@ -75,7 +75,7 @@
         <slf4j.version>1.7.12</slf4j.version>
         <httpcomponents.version>4.4.1</httpcomponents.version>
         <!-- Hortonworks hdp2.6 -->
-        <hdp-version>2.6.0.3-8</hdp-version>
+        <hdp-version>2.6.2.0-205</hdp-version>
         <hadoop1.version>1.2.1</hadoop1.version>
         <hadoop2.version>2.7.3.${hdp-version}</hadoop2.version>
         <hbase094.version>0.94.25</hbase094.version>
